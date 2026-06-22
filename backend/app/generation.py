@@ -28,7 +28,7 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
-def rank_and_explain(query: str, candidates: list[dict]) -> list[dict]:
+def rank_and_explain(query: str, candidates: list[dict], history: str = "") -> list[dict]:
     if not candidates:
         return []
 
@@ -45,12 +45,17 @@ def rank_and_explain(query: str, candidates: list[dict]) -> list[dict]:
         "You are a movie recommendation assistant. You will be given a user query and a list of candidate movies. "
         "Your task is to rank the candidates by how well they match the query and provide a brief explanation for each. "
         "You MUST only recommend movies from the provided candidate list — never invent or suggest movies not in the list. "
+        "If prior conversation history is provided, use it to understand follow-up queries "
+        "(e.g. 'something similar' refers to what was previously recommended). "
         "Respond with ONLY a valid JSON array. No prose, no markdown, no code fences. "
         "Each element must have exactly two fields: tmdb_id (integer) and reason (string, 1-2 sentences). "
         "Order the array from best to worst match. Include only movies that are actually relevant to the query."
     )
 
-    user_message = f"Query: {query}\n\nCandidates:\n{candidate_list}"
+    if history:
+        user_message = f"{history}\n\nCurrent query: {query}\n\nCandidates:\n{candidate_list}"
+    else:
+        user_message = f"Query: {query}\n\nCandidates:\n{candidate_list}"
 
     try:
         client = get_client()

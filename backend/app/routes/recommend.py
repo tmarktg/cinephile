@@ -7,6 +7,7 @@ from app.retrieval import search
 from app.generation import rank_and_explain, LLMError
 from app.agent.router import classify_query
 from app.agent.graph import run_agent
+from app.sessions import get_or_create, format_history
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -26,7 +27,7 @@ def _build_movie_result(payload: dict, reason: str | None = None) -> MovieResult
     )
 
 
-def _linear_path(req: RecommendRequest) -> RecommendResponse:
+def _linear_path(req: RecommendRequest, history: str = "") -> RecommendResponse:
     vector = embed_query(req.query)
     candidates = search(vector, k=max(req.k * 2, 15), filters=req.filters)
 
@@ -34,7 +35,7 @@ def _linear_path(req: RecommendRequest) -> RecommendResponse:
         return RecommendResponse(results=[], degraded=False, query=req.query)
 
     try:
-        ranked = rank_and_explain(req.query, candidates)
+        ranked = rank_and_explain(req.query, candidates, history=history)
         payload_by_id = {c["tmdb_id"]: c for c in candidates}
         results = []
         for item in ranked[: req.k]:
@@ -57,9 +58,9 @@ def _linear_path(req: RecommendRequest) -> RecommendResponse:
         return RecommendResponse(results=results, degraded=True, query=req.query)
 
 
-def _agent_path(req: RecommendRequest) -> RecommendResponse:
+def _agent_path(req: RecommendRequest, history: str = "") -> RecommendResponse:
     try:
-        payloads, degraded = run_agent(req.query)
+        payloads, degraded = run_agent(req.query, history=history)
         results = [
             _build_movie_result(p, reason=p.get("reason"))
             for p in payloads[: req.k]
@@ -67,14 +68,22 @@ def _agent_path(req: RecommendRequest) -> RecommendResponse:
         return RecommendResponse(results=results, degraded=degraded, query=req.query)
     except Exception as e:
         logger.warning("Agent path failed, falling back to linear: %s", e)
-        return _linear_path(req)
+        return _linear_path(req, history=history)
 
 
 @router.post("/recommend", response_model=RecommendResponse)
 async def recommend(req: RecommendRequest) -> RecommendResponse:
+    session_id, session = get_or_create(req.session_id)
+    history = format_history(session)
+
     query_type = classify_query(req.query)
     logger.info("Query classified as '%s': %s", query_type, req.query)
 
     if query_type == "complex":
-        return _agent_path(req)
-    return _linear_path(req)
+        response = _agent_path(req, history=history)
+    else:
+        response = _linear_path(req, history=history)
+
+    session.add_turn(req.query, [r.title for r in response.results])
+    response.session_id = session_id
+    return response

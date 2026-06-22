@@ -36,7 +36,7 @@ export default function MovieCard({ movie, onSimilar }) {
         {movie.reason && <p className="reason">{movie.reason}</p>}
         <button
           className="similar-btn"
-          onClick={() => onSimilar(movie.tmdb_id)}
+          onClick={() => onSimilar(movie.tmdb_id, movie.title)}
           title="Find similar movies"
         >
           Similar

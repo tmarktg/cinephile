@@ -15,6 +15,7 @@ class RecommendRequest(BaseModel):
     query: str
     k: int = Field(default=10, ge=1, le=50)
     filters: Filters | None = None
+    session_id: str | None = None
 
 
 class SimilarRequest(BaseModel):
@@ -37,6 +38,7 @@ class RecommendResponse(BaseModel):
     results: list[MovieResult]
     degraded: bool = False
     query: str
+    session_id: str | None = None
 
 
 class HealthResponse(BaseModel):

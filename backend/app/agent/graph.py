@@ -19,6 +19,7 @@ MAX_ROUNDS = 2
 
 class AgentState(TypedDict):
     query: str
+    history: str
     semantic_part: str
     constraints: dict
     # operator.add means returned candidates are appended to existing list
@@ -28,22 +29,24 @@ class AgentState(TypedDict):
     degraded: bool
 
 
-def _decompose(query: str) -> dict:
+def _decompose(query: str, history: str = "") -> dict:
     system_prompt = (
         "Decompose this movie recommendation query into two parts. "
+        "If prior conversation history is provided, use it to resolve references like 'something similar' or 'more recent'. "
         "Return ONLY valid JSON with these fields: "
         "{\"semantic\": \"<the mood/theme/style part for vector search>\", "
         "\"constraints\": {\"year_min\": <int|null>, \"year_max\": <int|null>, "
         "\"runtime_max\": <int|null>, \"genres_include\": [<str>], \"genres_exclude\": [<str>]}}. "
         "No prose, no markdown."
     )
+    content = f"{history}\n\nQuery to decompose: {query}" if history else query
     try:
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         msg = client.messages.create(
             model=settings.llm_model,
             max_tokens=256,
             system=system_prompt,
-            messages=[{"role": "user", "content": query}],
+            messages=[{"role": "user", "content": content}],
         )
         return json.loads(msg.content[0].text.strip())
     except Exception as e:
@@ -52,7 +55,7 @@ def _decompose(query: str) -> dict:
 
 
 def node_decompose(state: AgentState) -> dict:
-    decomposed = _decompose(state["query"])
+    decomposed = _decompose(state["query"], history=state.get("history", ""))
     return {
         "semantic_part": decomposed.get("semantic", state["query"]),
         "constraints": decomposed.get("constraints", {}),
@@ -108,7 +111,7 @@ def node_rank(state: AgentState) -> dict:
             unique.append(c)
 
     try:
-        ranked = rank_and_explain(state["query"], unique[:30])
+        ranked = rank_and_explain(state["query"], unique[:30], history=state.get("history", ""))
         payload_by_id = {c["tmdb_id"]: c for c in unique}
         results = []
         for item in ranked[:10]:
@@ -148,11 +151,12 @@ def get_graph():
     return _graph
 
 
-def run_agent(query: str) -> tuple[list[dict], bool]:
+def run_agent(query: str, history: str = "") -> tuple[list[dict], bool]:
     """Returns (results, degraded). Each result is a payload dict with optional 'reason'."""
     graph = get_graph()
     initial: AgentState = {
         "query": query,
+        "history": history,
         "semantic_part": "",
         "constraints": {},
         "candidates": [],

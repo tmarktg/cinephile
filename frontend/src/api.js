@@ -1,8 +1,9 @@
 const BASE = import.meta.env.VITE_API_URL || "";
 
-export async function getRecommendations({ query, k = 10, filters = null }) {
+export async function getRecommendations({ query, k = 10, filters = null, sessionId = null }) {
   const body = { query, k };
   if (filters) body.filters = filters;
+  if (sessionId) body.session_id = sessionId;
 
   const res = await fetch(`${BASE}/recommend`, {
     method: "POST",
