@@ -47,15 +47,14 @@ Reviewed the project end-to-end (all backend modules, eval harness, agent, READM
 
 **P4 — Deployment**
 
-- [ ] Deploy publicly (with guardrails)
-  - Platform: containerized FastAPI + vector DB + static React frontend — pick one, justify in README
-  - Qdrant: managed Qdrant Cloud free tier vs container on same host — decide and document
-  - Rate limiting on `/recommend` (per-IP)
-  - Anthropic billing alert + hard cap documented in README
-  - API key server-side only — confirm not in frontend bundle
-  - CORS locked to deployed origin (not `*`)
-  - "Live demo" link + deployment section in README
-  - Verify: fresh browser, multi-turn conversation, degraded path, devtools confirms no key in client assets
+- [x] Deploy publicly (with guardrails)
+  - Platform: Fly.io (single container — FastAPI + React static build); Qdrant Cloud free tier — both justified in README Deploy section
+  - Rate limiting: in-process sliding-window middleware, 10 req/min per IP on `/recommend` and `/recommend/stream`, configurable via `RATE_LIMIT_PER_MINUTE` env var; returns HTTP 429
+  - Anthropic billing alert + hard cap documented in README; ~$0.001/req at Haiku 4.5 pricing
+  - API key server-side only — `ANTHROPIC_API_KEY` set as Fly secret, never in frontend bundle; `VITE_API_URL` uses relative URL so no backend origin leaks either
+  - CORS: `ALLOWED_ORIGINS` env var (comma-separated); defaults to `*` for local dev, locked to Fly domain in production via `fly secrets set`
+  - Deploy section in README with step-by-step Qdrant Cloud + Fly.io instructions and smoke-test commands
+  - Verify: fresh browser, multi-turn conversation, degraded path, devtools confirms no key in client assets (manual step post-deploy)
 
 ### Effort estimates
 

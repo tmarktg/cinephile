@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     default_k: int = 15
     llm_model: str = "claude-haiku-4-5-20251001"
     hybrid_search: bool = True
+    qdrant_api_key: str = ""
+    allowed_origins: str = "*"
+    rate_limit_per_minute: int = 10
 
 
 settings = Settings()

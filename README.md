@@ -306,15 +306,77 @@ The retrieval core is intentionally lean. That's not naive RAG — it's the resu
 
 ---
 
+## Deploy
+
+**Platform:** Fly.io (containerized FastAPI + React static build, single machine) + [Qdrant Cloud](https://cloud.qdrant.io) free tier (1 GB, no infra to manage). Embedding models are baked into the Docker image so there's no download latency on cold start.
+
+**Why Fly.io:** Docker-native, zero-ops, generous free tier (3 shared VMs), and scales to zero between requests — appropriate for a demo that shouldn't burn credits when idle. Alternatively render.com or Railway work the same way with the provided `Dockerfile`.
+
+### Prerequisites
+
+- [Fly.io account](https://fly.io) + `flyctl` installed (`brew install flyctl`)
+- [Qdrant Cloud account](https://cloud.qdrant.io) — create a free cluster, copy the cluster URL and API key
+
+### One-time setup
+
+```bash
+# 1. Create a Qdrant Cloud cluster
+#    Cloud Console → Clusters → Create → Free tier → note the URL + API key
+
+# 2. Ingest your movie data into the cloud cluster (run locally against Qdrant Cloud)
+QDRANT_URL=https://<cluster-id>.us-east4-0.gcp.cloud.qdrant.io:6333 \
+QDRANT_API_KEY=<your-qdrant-key> \
+TMDB_API_KEY=<your-tmdb-key> \
+python backend/scripts/ingest.py --count 3000
+
+# 3. Create the Fly app (one time only — updates the app name in fly.toml)
+fly launch --no-deploy --copy-config
+
+# 4. Set production secrets (never hardcoded — Fly injects these as env vars)
+fly secrets set \
+  ANTHROPIC_API_KEY=<your-anthropic-key> \
+  QDRANT_URL=https://<cluster-id>.us-east4-0.gcp.cloud.qdrant.io:6333 \
+  QDRANT_API_KEY=<your-qdrant-key> \
+  ALLOWED_ORIGINS=https://<your-app>.fly.dev
+
+# 5. Deploy
+fly deploy
+```
+
+After `fly deploy`, the app is live at `https://<your-app>.fly.dev`.
+
+### Guardrails
+
+**Rate limiting:** `/recommend` and `/recommend/stream` are limited to **10 requests per IP per minute** by an in-process sliding-window middleware. This is enforced server-side — there is no API key in the frontend bundle.
+
+**Billing safeguard:** Set a hard spending cap in the [Anthropic console](https://console.anthropic.com/settings/limits) before deploying. Claude Haiku 4.5 costs ~$0.001 per recommendation (a few hundred tokens in + out). At the rate limit, the theoretical max burn rate is under $0.60/hour. Set the monthly cap to $5–10 and you have no surprise bills even if the rate limiter is bypassed.
+
+**CORS:** `ALLOWED_ORIGINS` is locked to your Fly.io domain in production — the `*` default only applies to local dev.
+
+**Verify after deploy:**
+```bash
+# Health check
+curl https://<your-app>.fly.dev/health
+
+# Quick recommendation smoke test
+curl -X POST https://<your-app>.fly.dev/recommend \
+  -H "Content-Type: application/json" \
+  -d '{"query": "dark psychological thriller"}'
+```
+
+Then open the app in a fresh browser, run a multi-turn conversation, and confirm devtools → Network → JS bundle contains no `ANTHROPIC_API_KEY` string.
+
+---
+
 ## Stack
 
 | Layer | Technology |
 |---|---|
 | API | FastAPI (async), Pydantic v2 |
-| Vector store | Qdrant |
+| Vector store | Qdrant (local via Docker Compose; Qdrant Cloud in production) |
 | Embeddings | FastEmbed — `BAAI/bge-small-en-v1.5` (384-dim, local) |
 | LLM | Anthropic Claude Haiku 4.5 |
 | Agent orchestration | LangGraph |
 | Data source | TMDB API |
 | Frontend | React 18 + Vite |
-| Infra | Docker Compose |
+| Infra | Docker Compose (local); Fly.io + Qdrant Cloud (production) |
