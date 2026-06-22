@@ -4,79 +4,28 @@ from app.retrieval import search
 
 # Hand-written queries with known-relevant TMDB IDs.
 # These cover a range of mood/genre/style descriptors to stress the embedding space.
+# Relevant IDs were seeded by hand then expanded with LLM-as-judge (score ≥ 4/5)
+# via scripts/expand_eval_ids.py — making recall@k meaningful against what's
+# actually in the collection rather than a narrow pre-curated list.
 TEST_QUERIES = [
-    {
-        "query": "dark psychological thriller about identity and obsession",
-        "relevant_ids": [550, 274, 311, 49026, 77338],  # Fight Club, The Silence of the Lambs, etc.
-    },
-    {
-        "query": "heartwarming animated family film",
-        "relevant_ids": [862, 585, 10681, 12, 920],  # Toy Story, Monsters Inc, WALL-E, Finding Nemo
-    },
-    {
-        "query": "epic science fiction space opera",
-        "relevant_ids": [11, 1891, 1892, 140607, 181808],  # Star Wars
-    },
-    {
-        "query": "romantic comedy with witty dialogue",
-        "relevant_ids": [13475, 9273, 105, 4951, 13808],
-    },
-    {
-        "query": "gritty crime drama set in a city",
-        "relevant_ids": [769, 240, 238, 278, 680],  # Goodfellas, Godfather, Shawshank, Pulp Fiction
-    },
-    {
-        "query": "slow burn existential drama about loneliness",
-        "relevant_ids": [194, 372058, 77338, 313369, 120],
-    },
-    {
-        "query": "action-packed superhero blockbuster",
-        "relevant_ids": [299536, 299534, 284053, 284054, 271110],  # Avengers, etc.
-    },
-    {
-        "query": "horror film with supernatural elements and dread",
-        "relevant_ids": [694, 346364, 493922, 475557, 539],
-    },
-    {
-        "query": "war film showing the human cost of conflict",
-        "relevant_ids": [857, 637, 424, 1150, 11324],  # Apocalypse Now, Schindler's List
-    },
-    {
-        "query": "quirky indie drama with offbeat humor",
-        "relevant_ids": [102651, 293863, 14777, 8909, 244786],
-    },
-    {
-        "query": "heist movie with clever twists",
-        "relevant_ids": [161, 9340, 489, 290859, 522],  # Ocean's Eleven, etc.
-    },
-    {
-        "query": "coming of age story about teenagers finding themselves",
-        "relevant_ids": [9377, 4960, 62, 399174, 103],
-    },
-    {
-        "query": "mind-bending sci-fi about time travel or alternate realities",
-        "relevant_ids": [27205, 157336, 264660, 438631, 109445],  # Inception, Interstellar
-    },
-    {
-        "query": "historical epic about ancient civilizations",
-        "relevant_ids": [1452, 98, 339408, 197, 256835],
-    },
-    {
-        "query": "documentary style realist drama about working class life",
-        "relevant_ids": [244786, 14531, 22970, 76341, 399],
-    },
-    {
-        "query": "musical with show-stopping dance numbers",
-        "relevant_ids": [313369, 14836, 420818, 1585, 4348],  # La La Land, etc.
-    },
-    {
-        "query": "dark comedy with satirical bite",
-        "relevant_ids": [680, 550, 539, 769, 475557],
-    },
-    {
-        "query": "animated film for adults with mature themes",
-        "relevant_ids": [129, 4935, 14160, 315162, 508439],  # Spirited Away, etc.
-    },
+    {"query": "dark psychological thriller about identity and obsession", "relevant_ids": [274, 311, 539, 550, 807, 1018, 49026, 77338, 419430, 1339713, 1439584, 1639398]},
+    {"query": "heartwarming animated family film", "relevant_ids": [12, 585, 862, 920, 1267, 9836, 10681, 13417, 28178, 150540, 467914, 529203, 592983, 1500099]},
+    {"query": "epic science fiction space opera", "relevant_ids": [11, 62, 563, 841, 1891, 1892, 54138, 140607, 181808, 181812, 188927, 339964, 438631, 693134, 1170608]},
+    {"query": "romantic comedy with witty dialogue", "relevant_ids": [105, 509, 4951, 9273, 9603, 10184, 13475, 13808, 50546, 884605, 1034716, 1511549, 1515615]},
+    {"query": "gritty crime drama set in a city", "relevant_ids": [101, 187, 238, 240, 278, 388, 680, 769, 6977, 479718, 581528, 1128650, 1245700, 1306845, 1426964, 1472951]},
+    {"query": "slow burn existential drama about loneliness", "relevant_ids": [120, 194, 77338, 103663, 313369, 334541, 371462, 372058, 858017]},
+    {"query": "action-packed superhero blockbuster", "relevant_ids": [1724, 1726, 1979, 24428, 141052, 271110, 284053, 284054, 299534, 299536, 383498, 464052, 594767, 969681, 1003596, 1003598]},
+    {"query": "horror film with supernatural elements and dread", "relevant_ids": [539, 694, 8329, 9392, 256274, 346364, 475557, 493922, 864370, 1092936, 1219739, 1363387]},
+    {"query": "war film showing the human cost of conflict", "relevant_ids": [424, 637, 857, 1150, 9567, 11324, 25237, 49046, 228150, 530915]},
+    {"query": "quirky indie drama with offbeat humor", "relevant_ids": [8909, 14777, 20453, 37735, 102651, 244786, 293863, 1391074, 1560230]},
+    {"query": "heist movie with clever twists", "relevant_ids": [161, 163, 489, 522, 629, 9340, 9654, 75656, 290859, 291805, 425274, 941109, 1171145]},
+    {"query": "coming of age story about teenagers finding themselves", "relevant_ids": [62, 103, 4960, 9377, 15804, 37735, 299710, 398818, 399174, 449176, 575813, 812037, 851644, 1008953, 1515615, 1542352]},
+    {"query": "mind-bending sci-fi about time travel or alternate realities", "relevant_ids": [1903, 27205, 49530, 58244, 109445, 157336, 220289, 264660, 438631, 577922, 1032892, 1119449, 1377650, 1590097]},
+    {"query": "historical epic about ancient civilizations", "relevant_ids": [98, 197, 652, 665, 1452, 1966, 256835, 339408, 856289, 1196943, 1368337]},
+    {"query": "documentary style realist drama about working class life", "relevant_ids": [399, 1402, 14531, 22970, 76341, 244786, 441168, 1097714, 1520769]},
+    {"query": "musical with show-stopping dance numbers", "relevant_ids": [88, 1585, 4348, 14836, 313369, 420818, 611213]},
+    {"query": "dark comedy with satirical bite", "relevant_ids": [539, 550, 680, 769, 4247, 419430, 475557, 639988, 1628448]},
+    {"query": "animated film for adults with mature themes", "relevant_ids": [129, 4935, 14160, 76726, 315162, 508439]},
 ]
 
 

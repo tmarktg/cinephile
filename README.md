@@ -183,33 +183,81 @@ All settings are read from environment variables (via `backend/app/config.py`). 
 
 ---
 
-## Running the retrieval eval
+## Evaluation
 
-A hand-built eval harness measures recall@k across 18 test queries covering genre, mood, and style.
+Two complementary eval harnesses cover different parts of the pipeline.
+
+### Retrieval eval — recall@10
+
+Measures whether the vector search surfaces known-relevant movies in the top-10 results. Relevant IDs were seeded by hand and then expanded using the LLM-as-judge (below) to cover movies that are semantically correct but weren't in the original hand-picked list. See `scripts/expand_eval_ids.py`.
 
 ```bash
-# From the repo root, with Qdrant running and the collection populated:
 docker compose up -d qdrant
 cd backend
 python -m app.eval        # recall@10
 python -m app.eval 5      # recall@5
 ```
 
-Sample output:
 ```
 Retrieval Eval — recall@10
 ==================================================
-Query                                              recall@10
-----------------------------------------------------------
-dark psychological thriller about identity...           0.60
-heartwarming animated family film                       0.80
-epic science fiction space opera                        0.80
+Query                                               recall@10
+--------------------------------------------------------------
+dark psychological thriller about identity...            0.33
+heartwarming animated family film                        0.43
+epic science fiction space opera                         0.47
+action-packed superhero blockbuster                      0.50
+heist movie with clever twists                           0.54
 ...
-----------------------------------------------------------
-Average                                                 0.64
+--------------------------------------------------------------
+Average                                                  0.40
 ```
 
-This means "I'd add technique X if eval showed a recall gap" is grounded in an actual number, not a vibe.
+recall@10 = 0.40 means the vector search puts 40% of LLM-judged relevant films in the top-10. Musicals (0.14) and adult animation (0.17) are the hardest categories — embedding space doesn't separate these well from broader drama/animation clusters.
+
+### End-to-end eval — LLM-as-judge
+
+Measures full pipeline quality by scoring each recommendation 1–5 using Claude as an independent judge (based on movie metadata only — not the generated reason, so the score is path-agnostic). Compares the LLM-ranked path against the degraded (raw vector rank) path.
+
+```bash
+# Requires ANTHROPIC_API_KEY
+cd backend
+python -m app.eval_e2e        # top-5 results
+python -m app.eval_e2e 3      # top-3
+```
+
+```
+End-to-End Eval (LLM-as-Judge) — top-5 results
+==============================================================
+Query                                          LLM  Degraded   Lift
+--------------------------------------------------------------
+dark psychological thriller about identity..  4.20      3.80  +0.40
+heartwarming animated family film             4.60      3.20  +1.40
+war film showing the human cost of conflict   4.60      3.00  +1.60
+mind-bending sci-fi about time travel...      4.60      3.20  +1.40
+musical with show-stopping dance numbers      2.75      0.00  +2.75
+documentary style realist drama...            3.20      3.40  -0.20
+...
+--------------------------------------------------------------
+Average                                       3.95      3.18  +0.78
+```
+
+LLM ranking lift: **+0.78 points out of 5** over raw vector ranking. The gain is largest on queries where semantic search alone returns loosely-related results (musicals, war films) and smallest where the vector space already clusters correctly (coming-of-age, dark comedy).
+
+### Embedding model ablation
+
+`scripts/embedding_ablation.py` compares recall@10 across three FastEmbed models without re-ingesting from TMDB — it reads existing payloads from Qdrant, re-embeds them with each model into a temporary collection, runs the eval, then cleans up.
+
+```bash
+cd backend
+python scripts/embedding_ablation.py
+```
+
+| Model | Dim | recall@10 |
+|---|---|---|
+| `BAAI/bge-small-en-v1.5` | 384 | baseline |
+| `sentence-transformers/all-MiniLM-L6-v2` | 384 | run to compare |
+| `BAAI/bge-base-en-v1.5` | 768 | run to compare |
 
 ---
 
