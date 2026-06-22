@@ -1,0 +1,51 @@
+# === Secrets — never commit ===
+.env
+.env.local
+.env.*.local
+
+# === Internal build/dev artifacts ===
+BUILD_SPEC.md
+.claude/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# === Node / frontend ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.cache/
+frontend/dist/
+
+# === Qdrant local storage (if run outside Docker) ===
+qdrant_storage/
+
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# === Editors ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
