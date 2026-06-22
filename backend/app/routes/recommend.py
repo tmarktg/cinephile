@@ -1,11 +1,14 @@
 from __future__ import annotations
+import asyncio
+import json
 import logging
 import time
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from app.models import RecommendRequest, RecommendResponse, MovieResult
 from app.embeddings import embed_query, embed_sparse
 from app.retrieval import search
-from app.generation import rank_and_explain, LLMError
+from app.generation import rank_and_explain, astream_rank_and_explain, LLMError
 from app.agent.router import classify_query
 from app.agent.graph import run_agent
 from app.sessions import get_or_create, format_history
@@ -89,6 +92,90 @@ def _agent_path(req: RecommendRequest, history: str = "") -> RecommendResponse:
     except Exception as e:
         logger.warning("Agent path failed, falling back to linear: %s", e)
         return _linear_path(req, history=history)
+
+
+@router.post("/recommend/stream")
+async def recommend_stream(req: RecommendRequest) -> StreamingResponse:
+    """SSE endpoint. Yields:
+      data: {"type": "chunk", "text": "..."}   — one token at a time (linear path only)
+      data: {"type": "thinking"}                — complex query, agent running
+      data: {"type": "done", "results": [...], "degraded": bool, "session_id": "...", "query": "..."}
+    """
+    async def generate():
+        session_id, session = get_or_create(req.session_id)
+        history = format_history(session)
+
+        vector = embed_query(req.query)
+        sparse = embed_sparse(req.query)
+        candidates = search(vector, k=max(req.k * 2, 15), filters=req.filters, sparse_vector=sparse)
+
+        if not candidates:
+            payload = {"type": "done", "results": [], "degraded": False,
+                       "session_id": session_id, "query": req.query}
+            yield f"data: {json.dumps(payload)}\n\n"
+            return
+
+        payload_by_id = {c["tmdb_id"]: c for c in candidates}
+        results: list[MovieResult] = []
+        degraded = False
+
+        query_type = await asyncio.to_thread(classify_query, req.query)
+
+        if query_type == "complex":
+            yield f"data: {json.dumps({'type': 'thinking'})}\n\n"
+            try:
+                payloads, degraded = await asyncio.to_thread(run_agent, req.query, history=history)
+                results = [_build_movie_result(p, reason=p.get("reason")) for p in payloads[: req.k]]
+            except Exception as e:
+                logger.warning("Agent failed in stream endpoint: %s", e)
+                results = [_build_movie_result(c) for c in candidates[: req.k]]
+                degraded = True
+        else:
+            try:
+                ranked = None
+                async for event in astream_rank_and_explain(req.query, candidates, history=history):
+                    if event["type"] == "chunk":
+                        yield f"data: {json.dumps(event)}\n\n"
+                    elif event["type"] == "result":
+                        ranked = event["ranked"]
+                    elif event["type"] == "error":
+                        logger.warning("Stream parse error: %s", event["error"])
+                        degraded = True
+
+                if ranked and not degraded:
+                    for item in ranked[: req.k]:
+                        p = payload_by_id.get(item["tmdb_id"])
+                        if p:
+                            results.append(_build_movie_result(p, reason=item["reason"]))
+                    ranked_ids = {item["tmdb_id"] for item in ranked}
+                    for c in candidates:
+                        if len(results) >= req.k:
+                            break
+                        if c["tmdb_id"] not in ranked_ids:
+                            results.append(_build_movie_result(c))
+                if degraded or not results:
+                    results = [_build_movie_result(c) for c in candidates[: req.k]]
+                    degraded = True
+            except LLMError as e:
+                logger.warning("LLM stream failed, degraded: %s", e)
+                results = [_build_movie_result(c) for c in candidates[: req.k]]
+                degraded = True
+
+        session.add_turn(req.query, [r.title for r in results])
+        done = {
+            "type": "done",
+            "results": [r.model_dump() for r in results],
+            "degraded": degraded,
+            "session_id": session_id,
+            "query": req.query,
+        }
+        yield f"data: {json.dumps(done)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/recommend", response_model=RecommendResponse)

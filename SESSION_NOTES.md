@@ -43,7 +43,7 @@ Reviewed the project end-to-end (all backend modules, eval harness, agent, READM
 
 **P3 — Polish**
 
-- [ ] Streaming LLM responses via `StreamingResponse`
+- [x] Streaming LLM responses: `POST /recommend/stream` SSE endpoint; async Anthropic client streams tokens as `{type:"chunk"}`; frontend renders live JSON preview below search bar with gradient fade; snaps to cards on `{type:"done"}`; complex queries emit `{type:"thinking"}` and run agent blocking then send single done event
 
 **P4 — Deployment**
 

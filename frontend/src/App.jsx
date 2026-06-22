@@ -1,12 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import MovieCard from "./components/MovieCard.jsx";
-import { getRecommendations, getSimilar } from "./api.js";
+import { streamRecommendations, getSimilar } from "./api.js";
 
 export default function App() {
   const [query, setQuery] = useState("");
   const [turns, setTurns] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [streamText, setStreamText] = useState("");
   const [error, setError] = useState(null);
   const bottomRef = useRef(null);
 
@@ -19,19 +20,29 @@ export default function App() {
   const search = useCallback(async (q) => {
     if (!q.trim()) return;
     setLoading(true);
+    setStreamText("");
     setError(null);
+    setQuery("");
     try {
-      const data = await getRecommendations({ query: q, sessionId });
-      setSessionId(data.session_id);
-      setTurns((prev) => [
-        ...prev,
-        { label: q, results: data.results, degraded: data.degraded },
-      ]);
-      setQuery("");
+      for await (const event of streamRecommendations({ query: q, sessionId })) {
+        if (event.type === "chunk") {
+          setStreamText((prev) => prev + event.text);
+        } else if (event.type === "thinking") {
+          setStreamText("…");
+        } else if (event.type === "done") {
+          setSessionId(event.session_id);
+          setStreamText("");
+          setTurns((prev) => [
+            ...prev,
+            { label: q, results: event.results, degraded: event.degraded },
+          ]);
+        }
+      }
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
+      setStreamText("");
     }
   }, [sessionId]);
 
@@ -60,6 +71,7 @@ export default function App() {
     setTurns([]);
     setSessionId(null);
     setQuery("");
+    setStreamText("");
     setError(null);
   };
 
@@ -96,6 +108,12 @@ export default function App() {
           )}
         </div>
 
+        {streamText && (
+          <div className="stream-preview">
+            <pre className="stream-text">{streamText}</pre>
+          </div>
+        )}
+
         {error && <div className="error-banner">Error: {error}</div>}
 
         {turns.length > 0 && (
@@ -129,7 +147,7 @@ export default function App() {
           </div>
         )}
 
-        {!loading && turns.length === 0 && !error && (
+        {!loading && !streamText && turns.length === 0 && !error && (
           <div className="empty-state">
             <p>Ask for anything. "A slow burn heist in 1970s New York."</p>
           </div>

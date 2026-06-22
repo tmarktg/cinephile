@@ -290,6 +290,30 @@ body {
   color: var(--text);
 }
 
+/* Streaming preview */
+.stream-preview {
+  max-width: 680px;
+  margin: -0.75rem auto 1.5rem;
+  padding: 0.625rem 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.stream-text {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 100px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+}
+
 /* Conversation */
 .conversation {
   display: flex;
