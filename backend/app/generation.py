@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 import logging
-from typing import AsyncGenerator
+# from typing import AsyncGenerator  # unused while streaming is commented out
 import anthropic
 from app.config import settings
 
@@ -103,48 +103,48 @@ def _parse_ranked(raw: str) -> list[dict]:
     return ranked
 
 
-async def astream_rank_and_explain(
-    query: str,
-    candidates: list[dict],
-    history: str = "",
-) -> AsyncGenerator[dict, None]:
-    """Async generator for the streaming path.
-
-    Yields:
-      {"type": "chunk", "text": str}   — one token at a time while the LLM writes
-      {"type": "result", "ranked": list} — parsed JSON once complete
-      {"type": "error", "error": str}  — if JSON parse fails after streaming
-    """
-    if not candidates:
-        return
-    if not settings.anthropic_api_key:
-        raise LLMAPIError("ANTHROPIC_API_KEY is not set")
-
-    system_prompt, user_message = _build_messages(query, candidates, history)
-    async_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    accumulated = ""
-
-    try:
-        async with async_client.messages.stream(
-            model=settings.llm_model,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
-        ) as stream:
-            async for text in stream.text_stream:
-                accumulated += text
-                yield {"type": "chunk", "text": text}
-            final = await stream.get_final_message()
-            logger.info(
-                "llm stream tokens in=%d out=%d model=%s",
-                final.usage.input_tokens,
-                final.usage.output_tokens,
-                settings.llm_model,
-            )
-    except anthropic.APIError as e:
-        raise LLMAPIError(f"Anthropic API error: {e}") from e
-
-    try:
-        yield {"type": "result", "ranked": _parse_ranked(accumulated.strip())}
-    except (json.JSONDecodeError, LLMParseError) as e:
-        yield {"type": "error", "error": str(e)}
+# async def astream_rank_and_explain(
+#     query: str,
+#     candidates: list[dict],
+#     history: str = "",
+# ) -> AsyncGenerator[dict, None]:
+#     """Async generator for the streaming path.
+#
+#     Yields:
+#       {"type": "chunk", "text": str}   — one token at a time while the LLM writes
+#       {"type": "result", "ranked": list} — parsed JSON once complete
+#       {"type": "error", "error": str}  — if JSON parse fails after streaming
+#     """
+#     if not candidates:
+#         return
+#     if not settings.anthropic_api_key:
+#         raise LLMAPIError("ANTHROPIC_API_KEY is not set")
+#
+#     system_prompt, user_message = _build_messages(query, candidates, history)
+#     async_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+#     accumulated = ""
+#
+#     try:
+#         async with async_client.messages.stream(
+#             model=settings.llm_model,
+#             max_tokens=1024,
+#             system=system_prompt,
+#             messages=[{"role": "user", "content": user_message}],
+#         ) as stream:
+#             async for text in stream.text_stream:
+#                 accumulated += text
+#                 yield {"type": "chunk", "text": text}
+#             final = await stream.get_final_message()
+#             logger.info(
+#                 "llm stream tokens in=%d out=%d model=%s",
+#                 final.usage.input_tokens,
+#                 final.usage.output_tokens,
+#                 settings.llm_model,
+#             )
+#     except anthropic.APIError as e:
+#         raise LLMAPIError(f"Anthropic API error: {e}") from e
+#
+#     try:
+#         yield {"type": "result", "ranked": _parse_ranked(accumulated.strip())}
+#     except (json.JSONDecodeError, LLMParseError) as e:
+#         yield {"type": "error", "error": str(e)}
