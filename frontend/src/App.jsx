@@ -168,7 +168,7 @@ export default function App() {
           </div>
         )}
 
-        {!loading && !streamText && turns.length === 0 && !error && (
+        {!loading && turns.length === 0 && !error && (
           <div className="empty-state">
             <p>Ask for anything. "A slow burn heist in 1970s New York."</p>
           </div>
