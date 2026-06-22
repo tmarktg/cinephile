@@ -1,6 +1,16 @@
 from __future__ import annotations
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, Range, MatchAny, MatchExcept
+from qdrant_client.models import (
+    Filter,
+    FieldCondition,
+    Range,
+    MatchAny,
+    MatchExcept,
+    Prefetch,
+    FusionQuery,
+    Fusion,
+    SparseVector,
+)
 from app.config import settings
 from app.models import Filters
 
@@ -61,21 +71,62 @@ def _build_filter(filters: Filters | None) -> Filter | None:
     return Filter(must=conditions)
 
 
+def _is_named_vector_collection() -> bool:
+    """Return True if the collection uses named vectors (hybrid-capable)."""
+    client = get_client()
+    try:
+        info = client.get_collection(settings.qdrant_collection)
+        return isinstance(info.config.params.vectors, dict)
+    except Exception:
+        return False
+
+
 def search(
     query_vector: list[float],
     k: int = 15,
     filters: Filters | None = None,
+    sparse_vector: SparseVector | None = None,
 ) -> list[dict]:
     client = get_client()
     qdrant_filter = _build_filter(filters)
-
-    results = client.query_points(
-        collection_name=settings.qdrant_collection,
-        query=query_vector,
-        limit=k,
-        query_filter=qdrant_filter,
-        with_payload=True,
+    use_hybrid = (
+        settings.hybrid_search
+        and sparse_vector is not None
+        and _is_named_vector_collection()
     )
+
+    if use_hybrid:
+        results = client.query_points(
+            collection_name=settings.qdrant_collection,
+            prefetch=[
+                Prefetch(
+                    query=query_vector,
+                    using="dense",
+                    limit=k * 3,
+                    filter=qdrant_filter,
+                ),
+                Prefetch(
+                    query=sparse_vector,
+                    using="sparse",
+                    limit=k * 3,
+                    filter=qdrant_filter,
+                ),
+            ],
+            query=FusionQuery(fusion=Fusion.RRF),
+            limit=k,
+            with_payload=True,
+        )
+    else:
+        # Dense-only path: works with both named ("dense") and legacy unnamed collections
+        named = _is_named_vector_collection()
+        results = client.query_points(
+            collection_name=settings.qdrant_collection,
+            query=query_vector,
+            using="dense" if named else None,
+            limit=k,
+            query_filter=qdrant_filter,
+            with_payload=True,
+        )
 
     candidates = []
     for r in results.points:
@@ -99,7 +150,11 @@ def get_movie_vector(tmdb_id: int) -> list[float] | None:
     points, _ = results
     if not points:
         return None
-    return points[0].vector
+    vec = points[0].vector
+    # Named vector collection returns a dict; legacy returns a plain list
+    if isinstance(vec, dict):
+        return vec.get("dense")
+    return vec
 
 
 def check_health() -> dict:

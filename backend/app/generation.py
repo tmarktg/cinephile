@@ -1,7 +1,10 @@
 from __future__ import annotations
 import json
+import logging
 import anthropic
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class LLMError(Exception):
@@ -66,6 +69,12 @@ def rank_and_explain(query: str, candidates: list[dict], history: str = "") -> l
             messages=[{"role": "user", "content": user_message}],
         )
         raw = message.content[0].text.strip()
+        logger.info(
+            "llm tokens in=%d out=%d model=%s",
+            message.usage.input_tokens,
+            message.usage.output_tokens,
+            settings.llm_model,
+        )
         # strip markdown code fences if the model adds them despite instructions
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1]

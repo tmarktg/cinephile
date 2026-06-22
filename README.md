@@ -180,6 +180,7 @@ All settings are read from environment variables (via `backend/app/config.py`). 
 | `EMBED_DIM` | `384` | Must match the model's output dimension. |
 | `DEFAULT_K` | `15` | Number of candidates fetched before LLM ranking. |
 | `LLM_MODEL` | `claude-haiku-4-5-20251001` | Anthropic model for rank + explain. |
+| `HYBRID_SEARCH` | `true` | Use BM25 sparse + dense RRF fusion. Requires re-ingesting with the current `ingest.py` (auto-migrates collection to named-vector format). Set to `false` to use dense-only. |
 
 ---
 

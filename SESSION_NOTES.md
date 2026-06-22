@@ -38,30 +38,24 @@ Reviewed the project end-to-end (all backend modules, eval harness, agent, READM
 
 **P2 — Technical depth**
 
-- [ ] Hybrid retrieval: add BM25 sparse vectors alongside dense in Qdrant; fuse scores; measure whether it lifts recall on keyword-heavy queries vs. semantic queries
-- [ ] Per-request observability: FastAPI middleware logging `retrieval_ms`, `generation_ms`, `tokens_used`
+- [x] Hybrid retrieval: BM25 sparse (`Qdrant/bm25`) + dense RRF fusion via Qdrant `Prefetch`/`FusionQuery`; `ingest.py` auto-migrates legacy unnamed-vector collections on next re-ingest; falls back cleanly to dense-only until then; `HYBRID_SEARCH=false` to disable
+- [x] Per-request observability: HTTP middleware logs method/path/status/`duration_ms`; route logs `retrieval_ms`, `generation_ms`, `path=linear|agent`; `generation.py` logs `in=N out=N tokens` per LLM call
 
 **P3 — Polish**
 
 - [ ] Streaming LLM responses via `StreamingResponse`
+
+**P4 — Deployment**
+
 - [ ] Deploy publicly (with guardrails)
-
-Problem: For entry-level roles, a live "try it now" link is worth more than a local-only repo, because interviewers don't always run local setups.
-
-Build:
-
-Recommend and use a platform that fits this stack (containerized FastAPI + a vector DB + a static React frontend). Pick based on the actual stack and explain the choice briefly in the README (e.g. container support, free tier, managed vs self-hosted Qdrant). Note the Qdrant decision explicitly: managed Qdrant Cloud free tier vs running the container on the same host — pick one and justify it.
-Non-negotiable guardrails (a public endpoint that calls a paid API is a liability without these):
-
-Rate limiting on /recommend (per-IP, sensible low limit) so the endpoint can't be hammered.
-A hard spending cap / billing alert on the Anthropic key — document the cap value in the README ops section. Assume the worst case of a bot looping requests.
-API key server-side only — never shipped in the frontend bundle. Confirm the built frontend contains no secret.
-CORS locked to the deployed frontend origin, not \*.
-A lightweight fallback so a cold/slow vector DB or a tripped rate limit returns a graceful message, not a stack trace.
-
-Add a "Live demo" link and a short "Running locally" + "Deployment" section to the README.
-
-## Verify: Hit the public URL from a fresh browser, run a multi-turn conversation, confirm the degraded path still degrades gracefully, and confirm (via devtools) no API key is present in client assets.
+  - Platform: containerized FastAPI + vector DB + static React frontend — pick one, justify in README
+  - Qdrant: managed Qdrant Cloud free tier vs container on same host — decide and document
+  - Rate limiting on `/recommend` (per-IP)
+  - Anthropic billing alert + hard cap documented in README
+  - API key server-side only — confirm not in frontend bundle
+  - CORS locked to deployed origin (not `*`)
+  - "Live demo" link + deployment section in README
+  - Verify: fresh browser, multi-turn conversation, degraded path, devtools confirms no key in client assets
 
 ### Effort estimates
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 import logging
+import time
 from fastapi import APIRouter
 from app.models import RecommendRequest, RecommendResponse, MovieResult
-from app.embeddings import embed_query
+from app.embeddings import embed_query, embed_sparse
 from app.retrieval import search
 from app.generation import rank_and_explain, LLMError
 from app.agent.router import classify_query
@@ -28,14 +29,20 @@ def _build_movie_result(payload: dict, reason: str | None = None) -> MovieResult
 
 
 def _linear_path(req: RecommendRequest, history: str = "") -> RecommendResponse:
+    t0 = time.perf_counter()
     vector = embed_query(req.query)
-    candidates = search(vector, k=max(req.k * 2, 15), filters=req.filters)
+    sparse = embed_sparse(req.query)
+    candidates = search(vector, k=max(req.k * 2, 15), filters=req.filters, sparse_vector=sparse)
+    retrieval_ms = (time.perf_counter() - t0) * 1000
 
     if not candidates:
         return RecommendResponse(results=[], degraded=False, query=req.query)
 
+    t1 = time.perf_counter()
     try:
         ranked = rank_and_explain(req.query, candidates, history=history)
+        generation_ms = (time.perf_counter() - t1) * 1000
+
         payload_by_id = {c["tmdb_id"]: c for c in candidates}
         results = []
         for item in ranked[: req.k]:
@@ -50,21 +57,34 @@ def _linear_path(req: RecommendRequest, history: str = "") -> RecommendResponse:
             if c["tmdb_id"] not in ranked_ids:
                 results.append(_build_movie_result(c))
 
+        logger.info(
+            "recommend path=linear retrieval_ms=%.0f generation_ms=%.0f candidates=%d results=%d",
+            retrieval_ms, generation_ms, len(candidates), len(results),
+        )
         return RecommendResponse(results=results, degraded=False, query=req.query)
 
     except LLMError as e:
-        logger.warning("LLM step failed, returning degraded results: %s", e)
+        generation_ms = (time.perf_counter() - t1) * 1000
+        logger.warning(
+            "recommend path=linear degraded=true retrieval_ms=%.0f generation_ms=%.0f error=%s",
+            retrieval_ms, generation_ms, e,
+        )
         results = [_build_movie_result(c) for c in candidates[: req.k]]
         return RecommendResponse(results=results, degraded=True, query=req.query)
 
 
 def _agent_path(req: RecommendRequest, history: str = "") -> RecommendResponse:
+    t0 = time.perf_counter()
     try:
         payloads, degraded = run_agent(req.query, history=history)
         results = [
             _build_movie_result(p, reason=p.get("reason"))
             for p in payloads[: req.k]
         ]
+        logger.info(
+            "recommend path=agent duration_ms=%.0f results=%d degraded=%s",
+            (time.perf_counter() - t0) * 1000, len(results), degraded,
+        )
         return RecommendResponse(results=results, degraded=degraded, query=req.query)
     except Exception as e:
         logger.warning("Agent path failed, falling back to linear: %s", e)
@@ -77,7 +97,7 @@ async def recommend(req: RecommendRequest) -> RecommendResponse:
     history = format_history(session)
 
     query_type = classify_query(req.query)
-    logger.info("Query classified as '%s': %s", query_type, req.query)
+    logger.info("query_type=%s query=%r", query_type, req.query)
 
     if query_type == "complex":
         response = _agent_path(req, history=history)

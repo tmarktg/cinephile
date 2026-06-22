@@ -12,10 +12,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import (
+    Distance,
+    VectorParams,
+    SparseVectorParams,
+    PointStruct,
+)
 
 from app.config import settings
-from app.embeddings import embed_query
+from app.embeddings import embed_query, embed_sparse
 
 TMDB_BASE = "https://api.themoviedb.org/3"
 
@@ -87,15 +92,23 @@ def build_doc(movie: dict) -> str:
 
 
 def ensure_collection(client: QdrantClient) -> None:
-    collections = [c.name for c in client.get_collections().collections]
-    if settings.qdrant_collection not in collections:
-        client.create_collection(
-            collection_name=settings.qdrant_collection,
-            vectors_config=VectorParams(size=settings.embed_dim, distance=Distance.COSINE),
-        )
-        print(f"Created collection '{settings.qdrant_collection}'")
-    else:
-        print(f"Collection '{settings.qdrant_collection}' already exists")
+    existing = [c.name for c in client.get_collections().collections]
+    if settings.qdrant_collection in existing:
+        info = client.get_collection(settings.qdrant_collection)
+        # Migrate legacy unnamed-vector collections to named vectors for hybrid search
+        if not isinstance(info.config.params.vectors, dict):
+            print(f"Migrating '{settings.qdrant_collection}' to named-vector format (required for hybrid search)…")
+            client.delete_collection(settings.qdrant_collection)
+        else:
+            print(f"Collection '{settings.qdrant_collection}' already exists")
+            return
+
+    client.create_collection(
+        collection_name=settings.qdrant_collection,
+        vectors_config={"dense": VectorParams(size=settings.embed_dim, distance=Distance.COSINE)},
+        sparse_vectors_config={"sparse": SparseVectorParams()},
+    )
+    print(f"Created collection '{settings.qdrant_collection}' with dense + sparse vectors")
 
 
 def main():
@@ -126,12 +139,13 @@ def main():
             continue
 
         doc = build_doc(details)
-        vector = embed_query(doc)
+        dense = embed_query(doc)
+        sparse = embed_sparse(doc)
 
         points.append(
             PointStruct(
                 id=tmdb_id,
-                vector=vector,
+                vector={"dense": dense, "sparse": sparse},
                 payload={
                     "tmdb_id": tmdb_id,
                     "title": details["title"],

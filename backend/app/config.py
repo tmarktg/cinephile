@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     embed_dim: int = 384
     default_k: int = 15
     llm_model: str = "claude-haiku-4-5-20251001"
+    hybrid_search: bool = True
 
 
 settings = Settings()
